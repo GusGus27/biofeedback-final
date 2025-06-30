@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Shimmer Streaming</title>
+</head>
+<body>
+    <h2>Conectar Shimmer</h2>
+
+    <button onclick="listarPuertos()">🔍 Listar Puertos Disponibles</button><br><br>
+    <label>Puertos detectados:</label>
+    <select id="puertosSelect">
+        <option value="">Seleccionar puerto</option>
+    </select>
+    <button onclick="detectarCanales()">🎯 Detectar Canales</button>
+
+    <form id="connectForm">
+        Nombre dispositivo: <input type="text" name="device_name" required><br>
+        Puerto COM: <input type="text" name="port" id="portInput" required><br>
+
+        <label>Canales detectados:</label><br>
+        <div id="canalesCheckboxes"></div>
+
+        <input type="hidden" name="channels" id="channelsInput" required>
+        <br>
+        <button type="submit">✅ Conectar</button>
+    </form>
+
+    <h2>Datos en tiempo real</h2>
+    <div id="data"></div>
+
+    <script>
+        // WebSocket para datos en tiempo real
+        var ws = new WebSocket("ws://localhost:8000/ws");
+        ws.onmessage = function(event) {
+            try {
+                var dataObj = JSON.parse(event.data);
+                for (var device in dataObj) {
+                    var deviceDiv = document.getElementById("device-" + device);
+                    if (!deviceDiv) {
+                        deviceDiv = document.createElement("div");
+                        deviceDiv.id = "device-" + device;
+                        deviceDiv.style.border = "1px solid #333";
+                        deviceDiv.style.padding = "10px";
+                        deviceDiv.style.margin = "10px 0";
+
+                        // Botón de desconexión
+                        const disconnectBtn = document.createElement("button");
+                        disconnectBtn.textContent = "❌ Desconectar";
+                        disconnectBtn.onclick = function () {
+                            const formData = new FormData();
+                            formData.append("device_name", device);
+
+                            fetch("/disconnect_shimmer", {
+                                method: "POST",
+                                body: formData
+                            })
+                            .then(response => response.json())
+                            .then(data => {
+                                alert(data.message);
+                                // Eliminar el div del dispositivo de la vista si se desconecta correctamente
+                                if (data.status === "ok") {
+                                    deviceDiv.remove();
+                                }
+                            })
+                            .catch(error => alert("Error desconectando: " + error));
+                        };
+
+                        deviceDiv.innerHTML = `<h3>Dispositivo: ${device}</h3><div class='device-data'></div>`;
+                        deviceDiv.appendChild(disconnectBtn);
+                        document.getElementById("data").appendChild(deviceDiv);
+                    }
+
+                    var dataContent = "";
+                    var channels = dataObj[device];
+                    for (var ch in channels) {
+                        dataContent += "<strong>" + ch + ":</strong> " + channels[ch] + " ";
+                    }
+                    deviceDiv.querySelector(".device-data").innerHTML = dataContent;
+                }
+            } catch (e) {
+                console.log("Error parseando JSON:", e);
+            }
+        };
+
+        // Listar puertos
+        function listarPuertos() {
+            fetch("/available_ports")
+                .then(response => response.json())
+                .then(data => {
+                    const select = document.getElementById("puertosSelect");
+                    select.innerHTML = '<option value="">Seleccionar puerto</option>';
+                    data.forEach(item => {
+                        const option = document.createElement("option");
+                        option.value = item.port;
+                        option.text = `${item.port} (${item.name})`;
+                        select.appendChild(option);
+                    });
+                });
+        }
+
+        // Detectar canales disponibles
+        function detectarCanales() {
+            const puerto = document.getElementById("puertosSelect").value;
+            if (!puerto) return alert("Selecciona un puerto primero.");
+            document.getElementById("portInput").value = puerto;
+
+            fetch(`/detect_channels?port=${encodeURIComponent(puerto)}`)
+                .then(response => response.json())
+                .then(data => {
+                    const contenedor = document.getElementById("canalesCheckboxes");
+                    contenedor.innerHTML = "";
+                    if (data.channels) {
+                        data.channels.forEach(ch => {
+                            const checkbox = document.createElement("input");
+                            checkbox.type = "checkbox";
+                            checkbox.value = ch;
+                            checkbox.name = "channel_option";
+                            checkbox.id = "chk_" + ch;
+
+                            const label = document.createElement("label");
+                            label.htmlFor = "chk_" + ch;
+                            label.textContent = ch;
+
+                            contenedor.appendChild(checkbox);
+                            contenedor.appendChild(label);
+                            contenedor.appendChild(document.createElement("br"));
+                        });
+                    } else {
+                        contenedor.innerHTML = "<i>No se detectaron canales.</i>";
+                    }
+                });
+        }
+
+        // Enviar formulario
+        document.getElementById("connectForm").addEventListener("submit", function(e) {
+            e.preventDefault();
+
+            const canalesSeleccionados = Array.from(document.querySelectorAll("input[name='channel_option']:checked"))
+                                              .map(cb => cb.value);
+            if (canalesSeleccionados.length === 0) {
+                alert("Selecciona al menos un canal.");
+                return;
+            }
+            document.getElementById("channelsInput").value = canalesSeleccionados.join(",");
+
+            const formData = new FormData(this);
+            fetch("/connect_shimmer", {
+                method: "POST",
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => alert(data.message))
+            .catch(error => alert("Error conectando: " + error));
+        });
+    </script>
+</body>
+</html>

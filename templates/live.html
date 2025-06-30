@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Visualización en Vivo</title>
+</head>
+<body>
+    <h2>Visualización en tiempo real</h2>
+    <div id="data"></div>
+
+    <script>
+        const dataDiv = document.getElementById("data");
+        const ws = new WebSocket("ws://localhost:8000/ws");
+
+        ws.onmessage = function(event) {
+            try {
+                const dataObj = JSON.parse(event.data);
+                if (Object.keys(dataObj).length === 0) {
+                    dataDiv.innerHTML = "<i>No hay ningún shimmer transmitiendo señales.</i>";
+                    return;
+                }
+
+                dataDiv.innerHTML = ""; // Limpiar antes de renderizar
+                for (const device in dataObj) {
+                    let deviceDiv = document.getElementById("device-" + device);
+                    if (!deviceDiv) {
+                        deviceDiv = document.createElement("div");
+                        deviceDiv.id = "device-" + device;
+                        deviceDiv.style.border = "1px solid #333";
+                        deviceDiv.style.padding = "10px";
+                        deviceDiv.style.margin = "10px 0";
+                        deviceDiv.innerHTML = `<h3>Dispositivo: ${device}</h3><div class='device-data'></div>`;
+                        dataDiv.appendChild(deviceDiv);
+                    }
+
+                    const deviceData = dataObj[device];
+                    let content = "";
+                    for (const ch in deviceData) {
+                        content += `<strong>${ch}:</strong> ${deviceData[ch]} `;
+                    }
+                    deviceDiv.querySelector(".device-data").innerHTML = content;
+                }
+            } catch (err) {
+                console.error("Error al parsear mensaje:", err);
+            }
+        };
+
+        ws.onclose = () => {
+            dataDiv.innerHTML = "<i>Conexión cerrada.</i>";
+        };
+
+        ws.onerror = () => {
+            dataDiv.innerHTML = "<i>Error de conexión con el servidor.</i>";
+        };
+    </script>
+</body>
+</html>
