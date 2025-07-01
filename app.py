@@ -21,7 +21,7 @@ from typing import Optional
 
 # Parámetros
 SAMPLING_RATE = 1024  # Hz
-BUFFER_SIZE = SAMPLING_RATE * 10  # 5 segundos de datos
+BUFFER_SIZE = SAMPLING_RATE * 30  # 5 segundos de datos
 UPDATE_INTERVAL = 2  # segundos
 
 ppg_data = {}
@@ -215,28 +215,22 @@ async def connect_shimmer(request: Request):
                     smoothed_bpm = np.mean(bpm_history[device_name])
                     bpm_values[device_name] = round(smoothed_bpm, 1)
 
-                    # --- IBI: cálculo rápido instantáneo (como antes) ---
-                    ibi, _ = compute_ibi_rmssd(filtered_signal, SAMPLING_RATE)
-                    ibi_values[device_name] = round(ibi, 1) if not np.isnan(ibi) else None
-
-                    # --- HRV (RMSSD): basado en timestamp de picos acumulados ---
-                    # Detección de picos actual
-                    peaks, _ = find_peaks(filtered_signal, distance=SAMPLING_RATE * 0.4)
-                    peak_times = peaks / SAMPLING_RATE  # tiempo en segundos relativo al inicio del buffer
-
-                    # Calcular IBIs y añadir a ibi_series
-                    if len(peak_times) >= 2:
+                    # --- IBI y RMSSD: usa solo los IBIs del buffer actual ---
+                    if len(peaks) >= 2:
+                        peak_times = peaks / SAMPLING_RATE  # en segundos
                         ibis = np.diff(peak_times) * 1000  # en ms
-                        for ibi in ibis:
-                            ibi_series[device_name].append(ibi)
+                        ibi_mean = np.mean(ibis)
+                        ibi_values[device_name] = round(ibi_mean, 1) if not np.isnan(ibi_mean) else None
 
-                    # Calcular RMSSD si hay suficientes IBIs en ibi_series
-                    if len(ibi_series[device_name]) >= 6:
-                        rmssd = np.sqrt(np.mean(np.diff(np.array(ibi_series[device_name])) ** 2))
-                        rmssd_history[device_name].append(rmssd)
-                        smoothed_rmssd = np.mean(rmssd_history[device_name])
-                        rmssd_values[device_name] = round(smoothed_rmssd, 1)
+                        if len(ibis) >= 2:
+                            rmssd = np.sqrt(np.mean(np.diff(ibis) ** 2))
+                            rmssd_history[device_name].append(rmssd)
+                            smoothed_rmssd = np.mean(rmssd_history[device_name])
+                            rmssd_values[device_name] = round(smoothed_rmssd, 1)
+                        else:
+                            rmssd_values[device_name] = None
                     else:
+                        ibi_values[device_name] = None
                         rmssd_values[device_name] = None
 
                     shimmer_state["last_bpm_time"] = now
@@ -257,9 +251,9 @@ async def connect_shimmer(request: Request):
 
                 if len(eda_buffers[device_name]) == WIN_SAMP and stride_count[device_name] >= STRD_SAMP:
                     print(f"\nProcesando GSR para {device_name} con {len(eda_buffers[device_name])} muestras\n")
-                    print(f"\nLista completa de GSR: {eda_buffers[device_name]}\n")
+                    #print(f"\nLista completa de GSR: {eda_buffers[device_name]}\n")
                     detectors[device_name].process_gsr(list(eda_buffers[device_name]))
-                    print("Lista de buffers:", list(eda_buffers[device_name]))
+                    #print("Lista de buffers:", list(eda_buffers[device_name]))
                     sax_list = detectors[device_name].get_sax_values()
                     print(f"\nSAX List: {sax_list}\n")
                     stress_levels[device_name] = sax_list[-1] if sax_list else 0
