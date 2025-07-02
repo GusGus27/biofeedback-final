@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Conectar Shimmer</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 2em; }
+        #status { margin-bottom: 1em; }
+        #data { margin-top: 2em; }
+        button { padding: 0.5em 1em; }
+        pre { background: #f4f4f4; padding: 1em; }
+    </style>
+</head>
+<body>
+    <h1>Conectar Shimmer</h1>
+    <div id="status">Desconectado</div>
+    <button id="connectBtn">Conectar Shimmer</button>
+    <div id="data"></div>
+
+    <script>
+        let connected = false;
+        let intervalId = null;
+
+        const connectBtn = document.getElementById('connectBtn');
+        const statusDiv = document.getElementById('status');
+        const dataDiv = document.getElementById('data');
+
+        connectBtn.onclick = async () => {
+            if (!connected) {
+                statusDiv.textContent = "Conectando...";
+                dataDiv.textContent = "";
+                try {
+                    const resp = await fetch('/connect_shimmer', { method: 'POST' });
+                    const result = await resp.json();
+                    if (result.status === "ok") {
+                        statusDiv.textContent = "¡Conectado!";
+                        connectBtn.textContent = "Desconectar Shimmer";
+                        connected = true;
+                        startDataUpdates();
+                    } else {
+                        statusDiv.textContent = "Error: " + result.message;
+                    }
+                } catch (e) {
+                    statusDiv.textContent = "Error de conexión";
+                }
+            } else {
+                statusDiv.textContent = "Desconectando...";
+                try {
+                    const resp = await fetch('/disconnect_shimmer', { method: 'POST' });
+                    const result = await resp.json();
+                    if (result.status === "ok") {
+                        statusDiv.textContent = "Desconectado";
+                        connectBtn.textContent = "Conectar Shimmer";
+                        connected = false;
+                        stopDataUpdates();
+                        dataDiv.textContent = "";
+                    } else {
+                        statusDiv.textContent = "Error: " + result.message;
+                    }
+                } catch (e) {
+                    statusDiv.textContent = "Error de desconexión";
+                }
+            }
+        };
+
+        const PROCESSING_API = "http://localhost:8000/last_metrics";
+
+        function startDataUpdates() {
+            intervalId = setInterval(async () => {
+                try {
+                    const resp = await fetch(PROCESSING_API);
+                    const data = await resp.json();
+                    dataDiv.innerHTML = "<pre>" + JSON.stringify(data, null, 2) + "</pre>";
+                } catch (e) {
+                    dataDiv.textContent = "Error obteniendo datos";
+                }
+            }, 1000);
+        }
+
+        function stopDataUpdates() {
+            if (intervalId) {
+                clearInterval(intervalId);
+                intervalId = null;
+            }
+        }
+    </script>
+</body>
+</html>
